@@ -87,6 +87,7 @@
   td a { color: var(--accent); text-decoration: none; }
   td a:hover { text-decoration: underline; }
   .results-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  button.mini { padding: 3px 10px; font-size: 12px; font-weight: 500; border-radius: 6px; }
   .results-tools input[type=text] { flex: 1; min-width: 180px; }
   .muted { color: var(--muted); }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
@@ -149,6 +150,21 @@
         the estimate below shows how many this run will use.
       </div>
 
+      <div class="row" style="margin-top:14px;">
+        <div class="field" style="flex:1; min-width:280px;">
+          <label>Contact finder — search engine ID (optional)</label>
+          <input type="text" id="cseId" placeholder="e.g. a1b2c3d4e5f6g7h8i — enables Find contacts">
+        </div>
+      </div>
+      <div class="hint">
+        Lets the app search the web for each lead's <b>Facebook, Instagram, TikTok and email</b>.
+        One-time setup: create a free engine at
+        <a href="https://programmablesearchengine.google.com/" target="_blank">programmablesearchengine.google.com</a>
+        (choose "Search the entire web"), copy its <b>Search engine ID</b> here, and enable the
+        <b>Custom Search API</b> for your key in the Google Cloud console. Free tier: 100 contact
+        lookups per day.
+      </div>
+
       <div class="field" style="margin-top:16px;"><label>Business categories</label></div>
       <div class="cats" id="cats"></div>
       <div class="cat-tools">
@@ -187,6 +203,7 @@
     <div class="chips" id="chips"></div>
     <div class="results-tools">
       <input type="text" id="filterText" placeholder="Filter by name, category or street…">
+      <button id="enrichAllBtn" title="Search the web for each lead's socials and email">Find contacts — all leads</button>
       <button id="exportBtn">Export CSV</button>
     </div>
     <div class="tbl-scroll">
@@ -196,6 +213,7 @@
           <th data-k="presence">Web presence</th>
           <th data-k="address">Address</th>
           <th data-k="phone">Phone</th>
+          <th>Contacts</th>
           <th data-k="reviews">Reviews</th>
           <th>Links</th>
         </tr></thead>
@@ -332,6 +350,19 @@ async function api(name, params) {
   if (name === "osm")     return directOsm(params);
   if (name === "google")  return directGoogle(params);
   if (name === "config")  return { hasServerKey: false };
+  if (name === "cse")     return directCse(params);
+}
+
+async function directCse({ apiKey, cx, q }) {
+  if (!apiKey || !cx || !q) return { error: "Missing API key, search engine ID, or query" };
+  const url = "https://www.googleapis.com/customsearch/v1?" + new URLSearchParams(
+    { key: apiKey, cx, q, num: 10 });
+  let r, data;
+  try { r = await fetch(url); data = await r.json(); }
+  catch (e) { return { error: e.message }; }
+  if (!r.ok) return { error: "HTTP " + r.status + ": " + JSON.stringify(data).slice(0, 250) };
+  return { items: (data.items || []).map(i => ({ link: i.link || "", title: i.title || "",
+                                                 snippet: i.snippet || "" })) };
 }
 
 async function directGeocode({ query }) {
@@ -660,6 +691,17 @@ function visiblePlaces() {
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+function contactsCell(p) {
+  const bits = [];
+  if (p.facebook)  bits.push(`<a href="${esc(p.facebook)}" target="_blank">FB</a>`);
+  if (p.instagram) bits.push(`<a href="${esc(p.instagram)}" target="_blank">IG</a>`);
+  if (p.tiktok)    bits.push(`<a href="${esc(p.tiktok)}" target="_blank">TikTok</a>`);
+  if (p.email)     bits.push(`<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`);
+  if (bits.length) return bits.join(" · ");
+  if (p.enriched)  return `<span class="muted">none found</span>`;
+  return `<button class="mini find-btn" data-id="${esc(p.id)}">find</button>`;
+}
+
 function renderTable() {
   const list = visiblePlaces();
   $("emptyMsg").style.display = list.length ? "none" : "";
@@ -679,11 +721,92 @@ function renderTable() {
       <td><span class="badge ${pr.cls}">${pr.label}</span></td>
       <td>${esc(p.address)}</td>
       <td>${esc(p.phone)}</td>
+      <td>${contactsCell(p)}</td>
       <td>${reviews}</td>
       <td>${links}</td>
     </tr>`;
   }).join("");
 }
+
+/* ---------------- contact finder (socials + email) ---------------- */
+function cseReady() { return $("cseId").value.trim().length > 0; }
+
+async function enrichPlace(p) {
+  const cx = $("cseId").value.trim();
+  const apiKey = $("apiKey").value.trim();
+  const city = (area?.name || "").split(",")[0].trim();
+  const q = `"${p.name}" ${city} contact OR email OR facebook OR instagram`;
+  const data = await api("cse", { apiKey, cx, q });
+  if (data.error) return data;
+  const found = { facebook: "", instagram: "", tiktok: "", email: "" };
+  for (const it of data.items || []) {
+    let host = "";
+    try { host = new URL(it.link).hostname.replace(/^(www|m)\./, ""); } catch {}
+    if (!found.facebook && host.endsWith("facebook.com")
+        && !/\/(directory|public|pages\/category|groups)\//.test(it.link)) found.facebook = it.link;
+    else if (!found.instagram && host.endsWith("instagram.com")
+        && !/\/(p|reel|explore)\//.test(it.link)) found.instagram = it.link;
+    else if (!found.tiktok && host.endsWith("tiktok.com")) found.tiktok = it.link;
+    if (!found.email) {
+      const m = ((it.title || "") + " " + (it.snippet || ""))
+        .match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/);
+      if (m) found.email = m[0].replace(/[.,]$/, "");
+    }
+  }
+  Object.assign(p, found, { enriched: true });
+  return {};
+}
+
+$("tbody").addEventListener("click", async e => {
+  const btn = e.target.closest(".find-btn");
+  if (!btn) return;
+  if (!cseReady()) {
+    alert("To use the contact finder, add a search engine ID in the \"Contact finder\" field " +
+          "of the Google options above (one-time setup — see the hint there).");
+    return;
+  }
+  btn.disabled = true; btn.textContent = "…";
+  const p = allPlaces.find(x => x.id === btn.dataset.id);
+  if (p) {
+    const res = await enrichPlace(p);
+    if (res.error) { alert("Contact search failed: " + res.error.slice(0, 200)); p.enriched = false; }
+  }
+  renderTable();
+});
+
+$("enrichAllBtn").addEventListener("click", async () => {
+  if (!cseReady()) {
+    alert("To use the contact finder, add a search engine ID in the \"Contact finder\" field " +
+          "of the Google options above (one-time setup — see the hint there).");
+    return;
+  }
+  const leads = visiblePlaces().filter(p => p.presence !== "site" && !p.enriched);
+  if (!leads.length) { alert("No un-searched leads in the current view."); return; }
+  if (!confirm(`Search the web for contacts of ${leads.length} lead(s)?\n` +
+               `Uses ${leads.length} Custom Search requests (Google's free tier is 100/day).`)) return;
+  cancelled = false;
+  $("progress").classList.add("show");
+  $("progLabel").textContent = "Finding contacts…";
+  $("log").textContent = "";
+  let done = 0, foundCount = 0;
+  for (const p of leads) {
+    if (cancelled) break;
+    const res = await enrichPlace(p);
+    done++;
+    $("bar").style.width = (done / leads.length * 100).toFixed(1) + "%";
+    if (res.error) {
+      log(`✗ ${p.name}: ${res.error.slice(0, 200)}`);
+      if (/quota|429|403|Missing/i.test(res.error)) { log("Stopping — fix the issue above and retry."); break; }
+    } else if (p.facebook || p.instagram || p.tiktok || p.email) {
+      foundCount++;
+      log(`✓ ${p.name}: ${[p.facebook && "FB", p.instagram && "IG", p.tiktok && "TikTok", p.email].filter(Boolean).join(", ")}`);
+    }
+    if (done % 10 === 0) renderTable();
+  }
+  $("progLabel").textContent = cancelled ? "Stopped." : "Done.";
+  log(`Contacts found for ${foundCount} of ${done} leads searched.`);
+  renderTable();
+});
 
 $("filterText").addEventListener("input", renderTable);
 document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click", () => {
@@ -694,7 +817,8 @@ document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click
 
 /* ---------------- CSV export ---------------- */
 $("exportBtn").addEventListener("click", () => {
-  const cols = ["name", "category", "presence", "website", "phone", "address", "rating", "reviews", "mapsUrl", "source"];
+  const cols = ["name", "category", "presence", "website", "phone", "facebook", "instagram",
+                "tiktok", "email", "address", "rating", "reviews", "mapsUrl", "source"];
   const rows = visiblePlaces().map(p => cols.map(c => {
     let v = c === "presence" ? PRESENCE[p.presence].label : (p[c] ?? "");
     v = String(v).replace(/"/g, '""');
@@ -717,6 +841,8 @@ $("catsDefault").addEventListener("click", () => setCats(d => d));
 $("radius").addEventListener("change", updateEstimate);
 $("depth").addEventListener("change", updateEstimate);
 $("apiKey").value = localStorage.getItem("nwf-key") || "";
+$("cseId").value = localStorage.getItem("nwf-cse") || "";
+$("cseId").addEventListener("change", () => localStorage.setItem("nwf-cse", $("cseId").value.trim()));
 api("config", {})
   .then(cfg => {
     hasServerKey = !!cfg.hasServerKey;

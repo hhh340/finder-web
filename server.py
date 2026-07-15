@@ -189,6 +189,23 @@ def api_config(params):
     return {"hasServerKey": bool(server_api_key())}
 
 
+def api_cse(params):
+    """Google Programmable Search — used to find a business's socials/email."""
+    key = params.get("apiKey", "").strip() or server_api_key()
+    cx = params.get("cx", "").strip()
+    q = params.get("q", "").strip()
+    if not key or not cx or not q:
+        return {"error": "Missing API key, search engine ID, or query"}
+    url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode(
+        {"key": key, "cx": cx, "q": q, "num": 10})
+    data, err = http_json(url)
+    if err:
+        return {"error": err}
+    return {"items": [{"link": i.get("link", ""), "title": i.get("title", ""),
+                       "snippet": i.get("snippet", "")}
+                      for i in data.get("items", [])]}
+
+
 def api_google(params):
     api_key = params.get("apiKey", "").strip() or server_api_key()
     if not api_key:
@@ -257,6 +274,7 @@ ROUTES = {
     "/api/osm": api_osm,
     "/api/google": api_google,
     "/api/config": api_config,
+    "/api/cse": api_cse,
 }
 
 MIME = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",

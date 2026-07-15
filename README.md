@@ -41,6 +41,14 @@ mode the key can also live in `google_api_key.txt` next to `server.py` so you ne
 4. Filter results with the chips (**No website / Social only / Directory only / Has website**),
    use the text filter, click **Search** links to double-check a business on Google, and
    **Export CSV** to save the filtered list.
+5. **Contact finder (optional):** fills in each lead's Facebook, Instagram, TikTok and email by
+   searching the web. One-time setup: create a free engine at
+   https://programmablesearchengine.google.com/ ("Search the entire web"), paste its
+   **Search engine ID** into the Contact finder field, and enable the **Custom Search API** for
+   your key in the Google Cloud console (if the key is API-restricted, add Custom Search API to
+   its allowed list). Then use the per-row **find** button or **Find contacts — all leads**.
+   Google's free tier is 100 contact lookups/day ($5 per 1,000 after that). Emails are only found
+   when a business has published one somewhere public — expect socials far more often than emails.
 
 ## How "no website" is decided
 
