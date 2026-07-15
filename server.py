@@ -94,22 +94,8 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.kumi.systems/api/interpreter",
 ]
 
-def api_osm(params):
-    lat = float(params["lat"])
-    lng = float(params["lng"])
-    radius = min(int(params.get("radius", 2000)), 15000)
-    # nodes+ways only (small businesses are practically never relations) — much faster
-    q = f"""
-[out:json][timeout:55][maxsize:536870912];
-(
-  nw(around:{radius},{lat},{lng})["shop"]["name"];
-  nw(around:{radius},{lat},{lng})["craft"]["name"];
-  nw(around:{radius},{lat},{lng})["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court|nightclub)$"]["name"];
-  nw(around:{radius},{lat},{lng})["leisure"~"^(fitness_centre)$"]["name"];
-  nw(around:{radius},{lat},{lng})["office"~"^(estate_agent|accountant|lawyer|insurance|architect|travel_agent)$"]["name"];
-);
-out center tags;
-"""
+def overpass_fetch(q):
+    """Run one Overpass query with retries over the mirror list."""
     data = err = None
     for attempt in range(2):                    # two rounds over the mirror list
         for endpoint in OVERPASS_ENDPOINTS:
@@ -118,15 +104,45 @@ out center tags;
                                   headers={"Content-Type": "application/x-www-form-urlencoded"},
                                   timeout=70)
             if data is not None:
-                break
-        if data is not None:
-            break
-        time.sleep(3)
-    if data is None:
-        return {"error": err}
+                return data, None
+        time.sleep(4)
+    return None, err
+
+
+def api_osm(params):
+    lat = float(params["lat"])
+    lng = float(params["lng"])
+    radius = min(int(params.get("radius", 2000)), 15000)
+    around = f"around:{radius},{lat},{lng}"
+    # nodes+ways only (small businesses are practically never relations), and split into
+    # two lighter queries — big single queries 504 on the free Overpass servers
+    queries = [
+        f"""[out:json][timeout:50][maxsize:536870912];
+(
+  nw({around})["shop"]["name"];
+  nw({around})["craft"]["name"];
+);
+out center tags;""",
+        f"""[out:json][timeout:50][maxsize:536870912];
+(
+  nw({around})["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court|nightclub)$"]["name"];
+  nw({around})["leisure"~"^(fitness_centre)$"]["name"];
+  nw({around})["office"~"^(estate_agent|accountant|lawyer|insurance|architect|travel_agent)$"]["name"];
+);
+out center tags;""",
+    ]
+    elements, failures = [], []
+    for q in queries:
+        data, err = overpass_fetch(q)
+        if data is None:
+            failures.append(err)
+        else:
+            elements.extend(data.get("elements", []))
+    if len(failures) == len(queries):
+        return {"error": failures[0]}
 
     places = []
-    for el in data.get("elements", []):
+    for el in elements:
         tags = el.get("tags", {})
         name = tags.get("name")
         if not name:
@@ -152,7 +168,11 @@ out center tags;
             "mapsUrl": f"https://www.google.com/maps/search/{urllib.parse.quote(name)}/@{lat_},{lng_},17z" if lat_ else "",
             "source": "osm",
         })
-    return {"places": places}
+    result = {"places": places}
+    if failures:
+        result["warning"] = ("Part of the OpenStreetMap data couldn't be fetched (server busy) — "
+                             "results may be incomplete. Retry in a minute for full coverage.")
+    return result
 
 
 # ---------------------------------------------------------------- Google Places API (New)

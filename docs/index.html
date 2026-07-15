@@ -341,16 +341,7 @@ async function directGeocode({ query }) {
   return { results: data.map(r => ({ name: r.display_name, lat: +r.lat, lng: +r.lon, type: r.type })) };
 }
 
-async function directOsm({ lat, lng, radius }) {
-  radius = Math.min(radius, 15000);
-  const around = `around:${radius},${lat},${lng}`;
-  const q = `[out:json][timeout:55][maxsize:536870912];(
-    nw(${around})["shop"]["name"];
-    nw(${around})["craft"]["name"];
-    nw(${around})["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court|nightclub)$"]["name"];
-    nw(${around})["leisure"~"^(fitness_centre)$"]["name"];
-    nw(${around})["office"~"^(estate_agent|accountant|lawyer|insurance|architect|travel_agent)$"]["name"];
-  );out center tags;`;
+async function overpassFetch(q) {
   const endpoints = ["https://overpass-api.de/api/interpreter",
                      "https://overpass.kumi.systems/api/interpreter"];
   let lastErr = "";
@@ -361,29 +352,60 @@ async function directOsm({ lat, lng, radius }) {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: "data=" + encodeURIComponent(q) });
         if (!r.ok) { lastErr = "HTTP " + r.status; continue; }
-        const data = await r.json();
-        return { places: (data.elements || []).filter(el => el.tags && el.tags.name).map(el => {
-          const t = el.tags;
-          const website = (t.website || t["contact:website"] || "").trim()
-                       || (t["contact:facebook"] || t["contact:instagram"] || "").trim();
-          const la = el.lat ?? el.center?.lat, lo = el.lon ?? el.center?.lon;
-          return {
-            id: `osm-${el.type}-${el.id}`,
-            name: t.name,
-            category: (t.shop || t.craft || t.amenity || t.leisure || t.office || "").replace(/_/g, " "),
-            address: [t["addr:housenumber"], t["addr:street"], t["addr:city"], t["addr:postcode"]]
-                     .filter(Boolean).join(" "),
-            phone: t.phone || t["contact:phone"] || "",
-            website, lat: la, lng: lo,
-            mapsUrl: la ? `https://www.google.com/maps/search/${encodeURIComponent(t.name)}/@${la},${lo},17z` : "",
-            source: "osm",
-          };
-        }) };
+        return { data: await r.json() };
       } catch (e) { lastErr = e.message; }
     }
-    await new Promise(res => setTimeout(res, 3000));
+    await new Promise(res => setTimeout(res, 4000));
   }
-  return { error: "Overpass error: " + lastErr };
+  return { err: lastErr };
+}
+
+async function directOsm({ lat, lng, radius }) {
+  radius = Math.min(radius, 15000);
+  const around = `around:${radius},${lat},${lng}`;
+  // split into two lighter queries — one big query 504s on the free Overpass servers
+  const queries = [
+    `[out:json][timeout:50][maxsize:536870912];(
+      nw(${around})["shop"]["name"];
+      nw(${around})["craft"]["name"];
+    );out center tags;`,
+    `[out:json][timeout:50][maxsize:536870912];(
+      nw(${around})["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court|nightclub)$"]["name"];
+      nw(${around})["leisure"~"^(fitness_centre)$"]["name"];
+      nw(${around})["office"~"^(estate_agent|accountant|lawyer|insurance|architect|travel_agent)$"]["name"];
+    );out center tags;`,
+  ];
+  const elements = [], failures = [];
+  for (const q of queries) {
+    const { data, err } = await overpassFetch(q);
+    if (err) failures.push(err);
+    else elements.push(...(data.elements || []));
+  }
+  if (failures.length === queries.length)
+    return { error: "Overpass error: " + failures[0] };
+
+  const places = elements.filter(el => el.tags && el.tags.name).map(el => {
+    const t = el.tags;
+    const website = (t.website || t["contact:website"] || "").trim()
+                 || (t["contact:facebook"] || t["contact:instagram"] || "").trim();
+    const la = el.lat ?? el.center?.lat, lo = el.lon ?? el.center?.lon;
+    return {
+      id: `osm-${el.type}-${el.id}`,
+      name: t.name,
+      category: (t.shop || t.craft || t.amenity || t.leisure || t.office || "").replace(/_/g, " "),
+      address: [t["addr:housenumber"], t["addr:street"], t["addr:city"], t["addr:postcode"]]
+               .filter(Boolean).join(" "),
+      phone: t.phone || t["contact:phone"] || "",
+      website, lat: la, lng: lo,
+      mapsUrl: la ? `https://www.google.com/maps/search/${encodeURIComponent(t.name)}/@${la},${lo},17z` : "",
+      source: "osm",
+    };
+  });
+  const result = { places };
+  if (failures.length)
+    result.warning = "Part of the OpenStreetMap data couldn't be fetched (server busy) — " +
+                     "results may be incomplete. Retry in a minute for full coverage.";
+  return result;
 }
 
 const GOOGLE_FIELD_MASK = ["places.id", "places.displayName", "places.formattedAddress",
@@ -520,10 +542,16 @@ async function searchOsm() {
   log(`Pulling all named businesses within ${+$("radius").value / 1000} km of ${area.name}…`);
   $("bar").style.width = "30%";
   const data = await api("osm", { lat: area.lat, lng: area.lng, radius: +$("radius").value });
-  if (data.error) { log("Overpass error: " + data.error); return; }
+  if (data.error) {
+    log("Overpass error: " + data.error);
+    log("The free OpenStreetMap server is overloaded right now — wait a minute and retry, " +
+        "try a smaller radius, or switch to the Google mode (it doesn't have this problem).");
+    return;
+  }
   addPlaces(data.places);
   $("bar").style.width = "100%";
   log(`Found ${data.places.length} businesses.`);
+  if (data.warning) log("⚠ " + data.warning);
 }
 
 let hasServerKey = false;
