@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT = 4173
-PUBLIC_DIR = Path(__file__).parent / "public"
+PUBLIC_DIR = Path(__file__).parent / "docs"
 USER_AGENT = "no-website-finder/1.0 (personal lead-research tool)"
 KEY_FILE = Path(__file__).parent / "google_api_key.txt"
 

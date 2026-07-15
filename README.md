@@ -7,12 +7,20 @@ a directory listing (Yelp, DoorDash, Booksy…). Great for finding web-design le
 
 ## Run it
 
+**Option A — hosted (GitHub Pages), no install at all:**
+enable Pages on this repo (Settings → Pages → Deploy from a branch → `main`, folder `/docs`)
+and open the published URL. The page calls the Nominatim / Overpass / Google APIs directly from
+your browser. Paste your Google API key into the key field once — it's kept in that browser's
+localStorage. Tip: restrict the key to your Pages URL (HTTP referrer) in the Google Cloud console.
+
+**Option B — locally:**
+
 ```bash
 python3 server.py
 ```
 
-Then open **http://localhost:4173** in your browser. No installs needed — it's pure Python
-standard library (macOS's built-in Python 3 works).
+Then open **http://localhost:4173**. No installs needed — pure Python standard library. In this
+mode the key can also live in `google_api_key.txt` next to `server.py` so you never paste it.
 
 ## How to use
 
