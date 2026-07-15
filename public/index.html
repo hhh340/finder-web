@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No-Website Finder</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1a2233; --muted: #66708a;
+    --line: #e3e6ee; --accent: #2456e6; --accent-ink: #ffffff;
+    --red: #d43a3a; --red-bg: #fdeaea; --amber: #a06a00; --amber-bg: #fdf3dd;
+    --green: #1a7f4b; --green-bg: #e5f5ec; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--ink); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+           padding: 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  input[type=text], input[type=password], select {
+    font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--ink); min-width: 0;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: #c8cdda; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .geo-results { margin-top: 10px; display: none; }
+  .geo-results.show { display: block; }
+  .geo-option { display: block; width: 100%; text-align: left; margin-top: 6px; font-weight: 400;
+                padding: 8px 12px; font-size: 14px; }
+  .geo-option.selected { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .modes { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; width: fit-content; }
+  .modes button { border: 0; border-radius: 0; font-weight: 500; }
+  .modes button.active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .hint a { color: var(--accent); }
+
+  .cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 4px 14px; margin-top: 10px; }
+  .cats label { font-size: 14px; display: flex; gap: 7px; align-items: center; cursor: pointer;
+                text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); }
+  .cat-tools { display: flex; gap: 14px; margin-top: 12px; font-size: 13px; }
+  .cat-tools a { color: var(--accent); cursor: pointer; text-decoration: none; }
+
+  #progress { display: none; }
+  #progress.show { display: block; }
+  .bar-track { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 10px 0; }
+  .bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width .3s; }
+  #log { font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
+         max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
+
+  #results { display: none; }
+  #results.show { display: block; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel);
+          font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .chip .n { font-weight: 700; }
+  .chip.active { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .chip.none  .n { color: var(--red); }
+  .chip.social .n { color: var(--amber); }
+  .chip.site  .n { color: var(--green); }
+
+  .tbl-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 900px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+       position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; }
+  tr:last-child td { border-bottom: 0; }
+  td .nm { font-weight: 600; }
+  td .cat { color: var(--muted); font-size: 12.5px; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.none   { background: var(--red-bg);   color: var(--red); }
+  .badge.social { background: var(--amber-bg); color: var(--amber); }
+  .badge.dir    { background: var(--amber-bg); color: var(--amber); }
+  .badge.site   { background: var(--green-bg); color: var(--green); }
+  td a { color: var(--accent); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .results-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .results-tools input[type=text] { flex: 1; min-width: 180px; }
+  .muted { color: var(--muted); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>No-Website Finder</h1>
+  <p class="sub">Find small businesses in any US / Canada / UK area that have no website — or whose only web presence is a Facebook, Instagram or Linktree page.</p>
+
+  <!-- ============ location ============ -->
+  <div class="panel">
+    <div class="row">
+      <div class="field" style="flex:2; min-width:260px;">
+        <label>Area, neighbourhood, city or postcode</label>
+        <input type="text" id="loc" placeholder="e.g. Camden, London — or Kitsilano, Vancouver — or 78704 Austin">
+      </div>
+      <div class="field">
+        <label>Radius</label>
+        <select id="radius">
+          <option value="800">0.5 mi / 0.8 km</option>
+          <option value="1600">1 mi / 1.6 km</option>
+          <option value="3200" selected>2 mi / 3.2 km</option>
+          <option value="5000">3 mi / 5 km</option>
+          <option value="8000">5 mi / 8 km</option>
+          <option value="12000">7.5 mi / 12 km</option>
+        </select>
+      </div>
+      <button id="geoBtn">Find area</button>
+    </div>
+    <div class="geo-results" id="geoResults"></div>
+  </div>
+
+  <!-- ============ data source ============ -->
+  <div class="panel">
+    <div class="field"><label>Data source</label></div>
+    <div class="modes">
+      <button id="modeGoogle" class="active">Google Places API (accurate)</button>
+      <button id="modeOsm">OpenStreetMap (free, less reliable)</button>
+    </div>
+
+    <div id="googleOpts">
+      <div class="row" style="margin-top:14px;">
+        <div class="field" style="flex:1; min-width:280px;">
+          <label id="apiKeyLabel">Google API key (stored only in this browser)</label>
+          <input type="password" id="apiKey" placeholder="AIza...">
+        </div>
+        <div class="field">
+          <label>Depth</label>
+          <select id="depth">
+            <option value="fast">Standard — 1 search per category</option>
+            <option value="deep">Deep — grid sweep (more results, more API calls)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">
+        Uses the official Places API "Text Search". Get a key in the
+        <a href="https://console.cloud.google.com/google/maps-apis" target="_blank">Google Cloud console</a>
+        (enable <b>Places API (New)</b>). Google's free monthly tier covers thousands of searches;
+        the estimate below shows how many this run will use.
+      </div>
+
+      <div class="field" style="margin-top:16px;"><label>Business categories</label></div>
+      <div class="cats" id="cats"></div>
+      <div class="cat-tools">
+        <a id="catsAll">Select all</a><a id="catsNone">Clear</a><a id="catsDefault">Defaults</a>
+        <span class="muted" id="estimate"></span>
+      </div>
+    </div>
+
+    <div id="osmOpts" style="display:none;">
+      <div class="hint" style="margin-top:12px;">
+        Free mode pulls every named shop, restaurant, cafe, barber, salon, craft &amp; small office from
+        OpenStreetMap in one go — no key needed. <b>Caveat:</b> OSM volunteers often don't record a
+        business's website even when it has one, so treat "no website" results here as leads to verify,
+        not confirmed. The Google mode is far more reliable.
+      </div>
+    </div>
+
+    <div style="margin-top:18px;">
+      <button class="primary" id="searchBtn" disabled>Search this area</button>
+      <span class="muted" id="searchHint" style="margin-left:10px; font-size:13px;">Pick an area above first.</span>
+    </div>
+  </div>
+
+  <!-- ============ progress ============ -->
+  <div class="panel" id="progress">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <b id="progLabel">Searching…</b>
+      <button id="cancelBtn">Stop</button>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+    <div id="log"></div>
+  </div>
+
+  <!-- ============ results ============ -->
+  <div id="results">
+    <div class="chips" id="chips"></div>
+    <div class="results-tools">
+      <input type="text" id="filterText" placeholder="Filter by name, category or street…">
+      <button id="exportBtn">Export CSV</button>
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr>
+          <th data-k="name">Business</th>
+          <th data-k="presence">Web presence</th>
+          <th data-k="address">Address</th>
+          <th data-k="phone">Phone</th>
+          <th data-k="reviews">Reviews</th>
+          <th>Links</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="emptyMsg" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------- categories (Google mode) ---------------- */
+const CATEGORIES = [
+  ["restaurants", true], ["cafes and coffee shops", true], ["bakeries", true],
+  ["bars and pubs", true], ["ice cream and dessert shops", true], ["food trucks", false],
+  ["barber shops", true], ["hair salons", true], ["nail salons", true],
+  ["beauty salons", true], ["spas and massage", true], ["tattoo shops", false],
+  ["clothing boutiques", true], ["shoe stores", false], ["jewelry stores", false],
+  ["gift shops", true], ["florists", true], ["book stores", false],
+  ["butcher shops and delis", true], ["specialty food stores", false],
+  ["convenience stores", false], ["liquor stores", false], ["smoke and vape shops", false],
+  ["furniture and antique stores", false], ["hardware stores", false],
+  ["pet stores and groomers", true], ["dry cleaners and laundromats", true],
+  ["tailors and alterations", true], ["shoe repair", false],
+  ["auto repair shops", true], ["car detailing", false],
+  ["phone and computer repair", true], ["locksmiths", false],
+  ["gyms and fitness studios", true], ["yoga and pilates studios", false],
+  ["dentists", false], ["physiotherapy clinics", false], ["chiropractors", false],
+  ["accountants", false], ["real estate agents", false], ["travel agencies", false],
+  ["photographers", false], ["daycares and preschools", false], ["tutoring centers", false],
+  ["plumbers", false], ["electricians", false], ["landscapers", false],
+  ["cleaning services", false], ["moving companies", false],
+];
+
+/* ---------------- web-presence classification ---------------- */
+const SOCIAL_HOSTS = ["facebook.com","m.facebook.com","fb.com","instagram.com","tiktok.com",
+  "twitter.com","x.com","linktr.ee","linkin.bio","beacons.ai","bio.site","wa.me",
+  "whatsapp.com","api.whatsapp.com","t.me","youtube.com","snapchat.com"];
+const DIRECTORY_HOSTS = ["yelp.com","tripadvisor.com","tripadvisor.ca","tripadvisor.co.uk",
+  "doordash.com","ubereats.com","grubhub.com","seamless.com","skipthedishes.com",
+  "just-eat.co.uk","justeat.ca","deliveroo.co.uk","deliveroo.com","opentable.com","opentable.ca",
+  "opentable.co.uk","booksy.com","fresha.com","vagaro.com","styleseat.com","setmore.com",
+  "treatwell.co.uk","treatwell.com","trea.tw","booking.com","bark.com",
+  "toasttab.com","business.site","google.com","goo.gl","nextdoor.com"];
+
+function classify(url) {
+  if (!url) return "none";
+  let host = "";
+  try { host = new URL(url.startsWith("http") ? url : "https://" + url).hostname.replace(/^www\./, ""); }
+  catch { return "none"; }
+  if (SOCIAL_HOSTS.some(h => host === h || host.endsWith("." + h))) return "social";
+  if (DIRECTORY_HOSTS.some(h => host === h || host.endsWith("." + h))) return "dir";
+  return "site";
+}
+const PRESENCE = {
+  none:   { label: "No website",          cls: "none",   rank: 0 },
+  social: { label: "Social only",         cls: "social", rank: 1 },
+  dir:    { label: "Directory/ordering",  cls: "dir",    rank: 2 },
+  site:   { label: "Has website",         cls: "site",   rank: 3 },
+};
+
+/* ---------------- state ---------------- */
+let area = null;               // {name, lat, lng}
+let mode = "google";
+let allPlaces = [];
+let activeChip = "leads";      // leads | none | social | dir | site | all
+let cancelled = false;
+let sortKey = "presence", sortAsc = true;
+
+const $ = id => document.getElementById(id);
+
+/* ---------------- build category checkboxes ---------------- */
+function buildCats() {
+  $("cats").innerHTML = CATEGORIES.map(([name, def], i) =>
+    `<label><input type="checkbox" data-i="${i}" ${def ? "checked" : ""}> ${name}</label>`).join("");
+  $("cats").addEventListener("change", updateEstimate);
+}
+function setCats(fn) {
+  document.querySelectorAll("#cats input").forEach((cb, i) => cb.checked = fn(CATEGORIES[i][1]));
+  updateEstimate();
+}
+$("catsAll") && null;
+
+function checkedCats() {
+  return [...document.querySelectorAll("#cats input:checked")].map(cb => CATEGORIES[+cb.dataset.i][0]);
+}
+
+function gridCells() {
+  if (!area) return [];
+  const radius = +$("radius").value;
+  const latD = radius / 111320;
+  const lngD = radius / (111320 * Math.cos(area.lat * Math.PI / 180));
+  const rect = { south: area.lat - latD, north: area.lat + latD,
+                 west: area.lng - lngD, east: area.lng + lngD };
+  if (mode !== "google" || $("depth").value === "fast") return [rect];
+  const per = Math.min(4, Math.max(2, Math.round(radius / 2000)));   // 2..4 per side
+  const cells = [];
+  for (let r = 0; r < per; r++) for (let c = 0; c < per; c++) {
+    cells.push({
+      south: rect.south + (rect.north - rect.south) * r / per,
+      north: rect.south + (rect.north - rect.south) * (r + 1) / per,
+      west:  rect.west  + (rect.east - rect.west) * c / per,
+      east:  rect.west  + (rect.east - rect.west) * (c + 1) / per,
+    });
+  }
+  return cells;
+}
+
+function updateEstimate() {
+  if (mode !== "google") return;
+  const q = checkedCats().length * gridCells().length;
+  $("estimate").textContent = q ? `≈ ${q}–${q * 3} API requests this run` : "";
+}
+
+/* ---------------- geocoding ---------------- */
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: JSON.stringify(body) });
+  return r.json();
+}
+
+$("geoBtn").addEventListener("click", geocode);
+$("loc").addEventListener("keydown", e => { if (e.key === "Enter") geocode(); });
+
+async function geocode() {
+  const q = $("loc").value.trim();
+  if (!q) return;
+  $("geoBtn").disabled = true; $("geoBtn").textContent = "Searching…";
+  const box = $("geoResults");
+  try {
+    const data = await post("/api/geocode", { query: q });
+    box.classList.add("show");
+    if (data.error) { box.innerHTML = `<span class="muted">Geocoding failed: ${esc(data.error)}</span>`; return; }
+    if (!data.results.length) { box.innerHTML = `<span class="muted">No matches — try adding the city or country.</span>`; return; }
+    box.innerHTML = data.results.map((r, i) =>
+      `<button class="geo-option" data-i="${i}">📍 ${esc(r.name)}</button>`).join("");
+    box.querySelectorAll(".geo-option").forEach(btn => btn.addEventListener("click", () => {
+      const r = data.results[+btn.dataset.i];
+      area = { name: r.name.split(",").slice(0, 2).join(","), lat: r.lat, lng: r.lng };
+      box.querySelectorAll(".geo-option").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      $("searchBtn").disabled = false;
+      $("searchHint").textContent = "Area set: " + area.name;
+      updateEstimate();
+    }));
+    if (data.results.length === 1) box.querySelector(".geo-option").click();
+  } finally { $("geoBtn").disabled = false; $("geoBtn").textContent = "Find area"; }
+}
+
+/* ---------------- mode toggle ---------------- */
+$("modeGoogle").addEventListener("click", () => setMode("google"));
+$("modeOsm").addEventListener("click", () => setMode("osm"));
+function setMode(m) {
+  mode = m;
+  $("modeGoogle").classList.toggle("active", m === "google");
+  $("modeOsm").classList.toggle("active", m === "osm");
+  $("googleOpts").style.display = m === "google" ? "" : "none";
+  $("osmOpts").style.display = m === "osm" ? "" : "none";
+  updateEstimate();
+}
+
+/* ---------------- search ---------------- */
+$("searchBtn").addEventListener("click", runSearch);
+$("cancelBtn").addEventListener("click", () => { cancelled = true; });
+
+function log(msg) {
+  const el = $("log");
+  el.textContent += msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+async function runSearch() {
+  if (!area) return;
+  cancelled = false;
+  allPlaces = [];
+  $("progress").classList.add("show");
+  $("results").classList.remove("show");
+  $("log").textContent = "";
+  $("bar").style.width = "0%";
+  $("searchBtn").disabled = true;
+
+  try {
+    if (mode === "osm") await searchOsm();
+    else await searchGoogle();
+  } catch (e) {
+    log("Error: " + e.message);
+  }
+  $("searchBtn").disabled = false;
+  $("progLabel").textContent = cancelled ? "Stopped." : "Done.";
+  finishResults();
+}
+
+async function searchOsm() {
+  $("progLabel").textContent = "Querying OpenStreetMap…";
+  log(`Pulling all named businesses within ${+$("radius").value / 1000} km of ${area.name}…`);
+  $("bar").style.width = "30%";
+  const data = await post("/api/osm", { lat: area.lat, lng: area.lng, radius: +$("radius").value });
+  if (data.error) { log("Overpass error: " + data.error); return; }
+  addPlaces(data.places);
+  $("bar").style.width = "100%";
+  log(`Found ${data.places.length} businesses.`);
+}
+
+let hasServerKey = false;
+
+async function searchGoogle() {
+  const apiKey = $("apiKey").value.trim();
+  if (!apiKey && !hasServerKey) { log("Enter your Google API key first (or switch to the free OpenStreetMap mode)."); return; }
+  if (apiKey) localStorage.setItem("nwf-key", apiKey);
+  const cats = checkedCats();
+  if (!cats.length) { log("Select at least one category."); return; }
+  const cells = gridCells();
+  const jobs = [];
+  for (const cat of cats) for (const [ci, cell] of cells.entries())
+    jobs.push({ cat, cell, ci });
+
+  $("progLabel").textContent = "Searching Google Places…";
+  log(`${cats.length} categories × ${cells.length} area cell(s) = ${jobs.length} searches`);
+  let done = 0, apiCalls = 0;
+
+  // small concurrency pool
+  const POOL = 4;
+  let idx = 0;
+  async function worker() {
+    while (idx < jobs.length && !cancelled) {
+      const job = jobs[idx++];
+      const textQuery = cells.length > 1 ? job.cat : `${job.cat} in ${area.name}`;
+      const data = await post("/api/google", { apiKey, textQuery, rect: job.cell });
+      done++;
+      $("bar").style.width = (done / jobs.length * 100).toFixed(1) + "%";
+      if (data.error) { log(`✗ ${job.cat}: ${data.error}`); if (/40[13]/.test(data.error)) cancelled = true; continue; }
+      apiCalls += data.requests || 1;
+      const added = addPlaces(data.places);
+      log(`✓ ${job.cat}${cells.length > 1 ? " (cell " + (job.ci + 1) + ")" : ""}: ${data.places.length} found, ${added} new`);
+    }
+  }
+  await Promise.all(Array.from({ length: POOL }, worker));
+  log(`Total: ${allPlaces.length} unique businesses · ${apiCalls} API requests used.`);
+}
+
+const seen = new Set();
+function addPlaces(places) {
+  let added = 0;
+  for (const p of places || []) {
+    if (p.status && p.status !== "OPERATIONAL") continue;
+    const key = p.id || (p.name + "|" + p.address).toLowerCase();
+    const nameKey = (p.name + "|" + (p.address || "").slice(0, 20)).toLowerCase();
+    if (seen.has(key) || seen.has(nameKey)) continue;
+    seen.add(key); seen.add(nameKey);
+    p.presence = classify(p.website);
+    allPlaces.push(p);
+    added++;
+  }
+  return added;
+}
+
+/* ---------------- results rendering ---------------- */
+function finishResults() {
+  seen.clear();
+  if (!allPlaces.length) { $("results").classList.add("show"); renderTable(); return; }
+  $("results").classList.add("show");
+  renderChips();
+  renderTable();
+  $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function counts() {
+  const c = { none: 0, social: 0, dir: 0, site: 0 };
+  allPlaces.forEach(p => c[p.presence]++);
+  return c;
+}
+
+function renderChips() {
+  const c = counts();
+  const leads = c.none + c.social + c.dir;
+  $("chips").innerHTML = `
+    <button class="chip none ${activeChip === "leads" ? "active" : ""}" data-f="leads">🎯 All leads <span class="n">${leads}</span></button>
+    <button class="chip none ${activeChip === "none" ? "active" : ""}" data-f="none">No website <span class="n">${c.none}</span></button>
+    <button class="chip social ${activeChip === "social" ? "active" : ""}" data-f="social">Social only <span class="n">${c.social}</span></button>
+    <button class="chip social ${activeChip === "dir" ? "active" : ""}" data-f="dir">Directory/ordering only <span class="n">${c.dir}</span></button>
+    <button class="chip site ${activeChip === "site" ? "active" : ""}" data-f="site">Has website <span class="n">${c.site}</span></button>
+    <button class="chip ${activeChip === "all" ? "active" : ""}" data-f="all">Everything <span class="n">${allPlaces.length}</span></button>`;
+  $("chips").querySelectorAll(".chip").forEach(ch =>
+    ch.addEventListener("click", () => { activeChip = ch.dataset.f; renderChips(); renderTable(); }));
+}
+
+function visiblePlaces() {
+  const txt = $("filterText").value.trim().toLowerCase();
+  let list = allPlaces.filter(p => {
+    if (activeChip === "leads") return p.presence !== "site";
+    if (activeChip !== "all" && p.presence !== activeChip) return false;
+    return true;
+  });
+  if (txt) list = list.filter(p =>
+    (p.name + " " + p.category + " " + p.address).toLowerCase().includes(txt));
+  const dir = sortAsc ? 1 : -1;
+  list.sort((a, b) => {
+    let va, vb;
+    if (sortKey === "presence") { va = PRESENCE[a.presence].rank; vb = PRESENCE[b.presence].rank; }
+    else if (sortKey === "reviews") { va = a.reviews || 0; vb = b.reviews || 0; }
+    else { va = (a[sortKey] || "").toLowerCase(); vb = (b[sortKey] || "").toLowerCase(); }
+    return va < vb ? -dir : va > vb ? dir : 0;
+  });
+  return list;
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function renderTable() {
+  const list = visiblePlaces();
+  $("emptyMsg").style.display = list.length ? "none" : "";
+  $("emptyMsg").textContent = allPlaces.length
+    ? "Nothing matches this filter."
+    : "No results. Try a bigger radius, more categories, or the other data source.";
+  $("tbody").innerHTML = list.map(p => {
+    const pr = PRESENCE[p.presence];
+    const links = [
+      p.mapsUrl ? `<a href="${esc(p.mapsUrl)}" target="_blank">Maps</a>` : "",
+      p.website ? `<a href="${esc(p.website)}" target="_blank">${p.presence === "site" ? "Site" : "Link"}</a>` : "",
+      `<a href="https://www.google.com/search?q=${encodeURIComponent(p.name + " " + (p.address || area?.name || ""))}" target="_blank">Search</a>`,
+    ].filter(Boolean).join(" · ");
+    const reviews = p.rating ? `${p.rating}★ (${p.reviews || 0})` : (p.source === "osm" ? "—" : "");
+    return `<tr>
+      <td><div class="nm">${esc(p.name)}</div><div class="cat">${esc(p.category)}</div></td>
+      <td><span class="badge ${pr.cls}">${pr.label}</span></td>
+      <td>${esc(p.address)}</td>
+      <td>${esc(p.phone)}</td>
+      <td>${reviews}</td>
+      <td>${links}</td>
+    </tr>`;
+  }).join("");
+}
+
+$("filterText").addEventListener("input", renderTable);
+document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click", () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = true; }
+  renderTable();
+}));
+
+/* ---------------- CSV export ---------------- */
+$("exportBtn").addEventListener("click", () => {
+  const cols = ["name", "category", "presence", "website", "phone", "address", "rating", "reviews", "mapsUrl", "source"];
+  const rows = visiblePlaces().map(p => cols.map(c => {
+    let v = c === "presence" ? PRESENCE[p.presence].label : (p[c] ?? "");
+    v = String(v).replace(/"/g, '""');
+    return /[",\n]/.test(v) ? `"${v}"` : v;
+  }).join(","));
+  const csv = cols.join(",") + "\n" + rows.join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const areaSlug = (area?.name || "area").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  a.download = `no-website-leads-${areaSlug}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ---------------- init ---------------- */
+buildCats();
+$("catsAll").addEventListener("click", () => setCats(() => true));
+$("catsNone").addEventListener("click", () => setCats(() => false));
+$("catsDefault").addEventListener("click", () => setCats(d => d));
+$("radius").addEventListener("change", updateEstimate);
+$("depth").addEventListener("change", updateEstimate);
+$("apiKey").value = localStorage.getItem("nwf-key") || "";
+fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+  .then(r => r.json()).then(cfg => {
+    hasServerKey = !!cfg.hasServerKey;
+    if (hasServerKey) {
+      $("apiKeyLabel").textContent = "Google API key — ✓ loaded from google_api_key.txt";
+      $("apiKey").placeholder = "using saved key (paste here to override)";
+    }
+  }).catch(() => {});
+updateEstimate();
+</script>
+</body>
+</html>

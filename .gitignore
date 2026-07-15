@@ -1,0 +1,5 @@
+# Secrets — never commit the API key
+google_api_key.txt
+
+# OS noise
+.DS_Store
