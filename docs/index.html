@@ -228,6 +228,13 @@
 <script>
 "use strict";
 
+/* localStorage is unavailable in some contexts (data: URLs, some private modes);
+   degrade to "not remembered" instead of crashing */
+const store = {
+  get(k)    { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
 /* ---------------- categories (Google mode) ---------------- */
 const CATEGORIES = [
   ["restaurants", true], ["cafes and coffee shops", true], ["bakeries", true],
@@ -597,7 +604,7 @@ let hasServerKey = false;
 async function searchGoogle() {
   const apiKey = $("apiKey").value.trim();
   if (!apiKey && !hasServerKey) { log("Enter your Google API key first (or switch to the free OpenStreetMap mode)."); return; }
-  if (apiKey) localStorage.setItem("nwf-key", apiKey);
+  if (apiKey) store.set("nwf-key", apiKey);
   const cats = checkedCats();
   if (!cats.length) { log("Select at least one category."); return; }
   const cells = gridCells();
@@ -867,9 +874,9 @@ $("catsNone").addEventListener("click", () => setCats(() => false));
 $("catsDefault").addEventListener("click", () => setCats(d => d));
 $("radius").addEventListener("change", updateEstimate);
 $("depth").addEventListener("change", updateEstimate);
-$("apiKey").value = localStorage.getItem("nwf-key") || "";
-$("cseId").value = localStorage.getItem("nwf-cse") || "";
-$("cseId").addEventListener("change", () => localStorage.setItem("nwf-cse", $("cseId").value.trim()));
+$("apiKey").value = store.get("nwf-key") || "";
+$("cseId").value = store.get("nwf-cse") || "";
+$("cseId").addEventListener("change", () => store.set("nwf-cse", $("cseId").value.trim()));
 api("config", {})
   .then(cfg => {
     hasServerKey = !!cfg.hasServerKey;
