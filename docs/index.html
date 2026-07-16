@@ -158,12 +158,10 @@
         </div>
       </div>
       <div class="hint">
-        Lets the app search the web for each lead's <b>Facebook, Instagram, TikTok and email</b>.
-        One-time setup: create a free engine at
-        <a href="https://programmablesearchengine.google.com/" target="_blank">programmablesearchengine.google.com</a>
-        (choose "Search the entire web"), copy its <b>Search engine ID</b> here, and enable the
-        <b>Custom Search API</b> for your key in the Google Cloud console. Free tier: 100 contact
-        lookups per day.
+        Automated contact lookup (Facebook / Instagram / TikTok / email per lead) uses Google's
+        Custom Search JSON API — which Google has <b>closed to new customers</b>. Only fill this
+        field if your Google project already had access. Everyone else: each lead in the results
+        gets one-click <b>FB? / IG? / ✉?</b> lookup links instead — instant and free, just manual.
       </div>
 
       <div class="field" style="margin-top:16px;"><label>Business categories</label></div>
@@ -713,7 +711,15 @@ function contactsCell(p) {
   if (p.email)     bits.push(`<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`);
   if (bits.length) return bits.join(" · ");
   if (p.enriched)  return `<span class="muted">none found</span>`;
-  return `<button class="mini find-btn" data-id="${esc(p.id)}">find</button>`;
+  // one-click manual lookups (always available, no API needed)
+  const q = encodeURIComponent(`"${p.name}" ${(area?.name || "").split(",")[0]}`);
+  const lookups = [
+    `<a href="https://www.google.com/search?q=site:facebook.com+${q}" target="_blank" title="Search for their Facebook page">FB?</a>`,
+    `<a href="https://www.google.com/search?q=site:instagram.com+${q}" target="_blank" title="Search for their Instagram">IG?</a>`,
+    `<a href="https://www.google.com/search?q=${q}+email+OR+contact" target="_blank" title="Search for an email">✉?</a>`,
+  ];
+  const findBtn = cseReady() ? `<button class="mini find-btn" data-id="${esc(p.id)}">find</button> · ` : "";
+  return findBtn + lookups.join(" · ");
 }
 
 function renderTable() {
@@ -793,11 +799,7 @@ async function enrichPlace(p) {
 $("tbody").addEventListener("click", async e => {
   const btn = e.target.closest(".find-btn");
   if (!btn) return;
-  if (!cseReady()) {
-    alert("To use the contact finder, add a search engine ID in the \"Contact finder\" field " +
-          "of the Google options above (one-time setup — see the hint there).");
-    return;
-  }
+  if (!cseReady()) return;
   btn.disabled = true; btn.textContent = "…";
   const p = allPlaces.find(x => x.id === btn.dataset.id);
   if (p) {
@@ -809,8 +811,10 @@ $("tbody").addEventListener("click", async e => {
 
 $("enrichAllBtn").addEventListener("click", async () => {
   if (!cseReady()) {
-    alert("To use the contact finder, add a search engine ID in the \"Contact finder\" field " +
-          "of the Google options above (one-time setup — see the hint there).");
+    alert("Bulk contact lookup needs a search API, and Google has closed its Custom Search API " +
+          "to new customers. Use the FB? / IG? / ✉? links on each lead instead — one click " +
+          "opens the right search. (If your Google project has legacy Custom Search access, " +
+          "paste its engine ID in the Contact finder field to enable this button.)");
     return;
   }
   const leads = visiblePlaces().filter(p => p.presence !== "site" && !p.enriched);
