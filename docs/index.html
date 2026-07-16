@@ -731,17 +731,10 @@ function renderTable() {
 /* ---------------- contact finder (socials + email) ---------------- */
 function cseReady() { return $("cseId").value.trim().length > 0; }
 
-async function enrichPlace(p) {
-  const cx = $("cseId").value.trim();
-  const apiKey = $("apiKey").value.trim();
-  const city = (area?.name || "").split(",")[0].trim();
-  const q = `"${p.name}" ${city} contact OR email OR facebook OR instagram`;
-  const data = await api("cse", { apiKey, cx, q });
-  if (data.error) return data;
-  const found = { facebook: "", instagram: "", tiktok: "", email: "" };
-  for (const it of data.items || []) {
+function harvestContacts(items, found) {
+  for (const it of items || []) {
     let host = "";
-    try { host = new URL(it.link).hostname.replace(/^(www|m)\./, ""); } catch {}
+    try { host = new URL(it.link).hostname.replace(/^(www|m|web)\./, ""); } catch {}
     if (!found.facebook && host.endsWith("facebook.com")
         && !/\/(directory|public|pages\/category|groups)\//.test(it.link)) found.facebook = it.link;
     else if (!found.instagram && host.endsWith("instagram.com")
@@ -753,6 +746,31 @@ async function enrichPlace(p) {
       if (m) found.email = m[0].replace(/[.,]$/, "");
     }
   }
+}
+
+async function enrichPlace(p) {
+  const cx = $("cseId").value.trim();
+  const apiKey = $("apiKey").value.trim();
+  const city = (area?.name || "").split(",")[0].trim();
+  const found = { facebook: "", instagram: "", tiktok: "", email: "" };
+
+  const data = await api("cse", { apiKey, cx,
+    q: `"${p.name}" ${city} contact OR email OR facebook OR instagram` });
+  if (data.error) return data;
+  harvestContacts(data.items, found);
+
+  // Facebook page found but no email yet → one follow-up search of Google's
+  // index of that page, where a publicly listed email usually shows up
+  if (found.facebook && !found.email) {
+    let slug = "";
+    try { slug = new URL(found.facebook).pathname.split("/").filter(Boolean)[0] || ""; } catch {}
+    if (slug && !["profile.php", "people"].includes(slug)) {
+      const fb = await api("cse", { apiKey, cx,
+        q: `site:facebook.com ${slug} email OR contact OR "@gmail.com" OR "@hotmail.com" OR "@outlook.com"` });
+      if (!fb.error) harvestContacts(fb.items, found);
+    }
+  }
+
   Object.assign(p, found, { enriched: true });
   return {};
 }
@@ -783,7 +801,8 @@ $("enrichAllBtn").addEventListener("click", async () => {
   const leads = visiblePlaces().filter(p => p.presence !== "site" && !p.enriched);
   if (!leads.length) { alert("No un-searched leads in the current view."); return; }
   if (!confirm(`Search the web for contacts of ${leads.length} lead(s)?\n` +
-               `Uses ${leads.length} Custom Search requests (Google's free tier is 100/day).`)) return;
+               `Uses ${leads.length}–${leads.length * 2} Custom Search requests — the extra one ` +
+               `checks a lead's Facebook page for a listed email (free tier is 100/day).`)) return;
   cancelled = false;
   $("progress").classList.add("show");
   $("progLabel").textContent = "Finding contacts…";
