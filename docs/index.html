@@ -79,6 +79,7 @@
   tr:last-child td { border-bottom: 0; }
   td .nm { font-weight: 600; }
   td .cat { color: var(--muted); font-size: 12.5px; }
+  td .desc { color: var(--muted); font-size: 12px; font-style: italic; max-width: 320px; margin-top: 2px; }
   .badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
   .badge.none   { background: var(--red-bg);   color: var(--red); }
   .badge.social { background: var(--amber-bg); color: var(--amber); }
@@ -420,10 +421,14 @@ async function directOsm({ lat, lng, radius }) {
     const website = (t.website || t["contact:website"] || "").trim()
                  || (t["contact:facebook"] || t["contact:instagram"] || "").trim();
     const la = el.lat ?? el.center?.lat, lo = el.lon ?? el.center?.lon;
+    let category = (t.shop || t.craft || t.amenity || t.leisure || t.office || "").replace(/_/g, " ");
+    const cuisine = (t.cuisine || "").replace(/;/g, ", ").replace(/_/g, " ");
+    if (cuisine) category += ` · ${cuisine}`;
     return {
       id: `osm-${el.type}-${el.id}`,
       name: t.name,
-      category: (t.shop || t.craft || t.amenity || t.leisure || t.office || "").replace(/_/g, " "),
+      category,
+      description: t.description || "",
       address: [t["addr:housenumber"], t["addr:street"], t["addr:city"], t["addr:postcode"]]
                .filter(Boolean).join(" "),
       phone: t.phone || t["contact:phone"] || "",
@@ -442,6 +447,7 @@ async function directOsm({ lat, lng, radius }) {
 const GOOGLE_FIELD_MASK = ["places.id", "places.displayName", "places.formattedAddress",
   "places.websiteUri", "places.nationalPhoneNumber", "places.rating", "places.userRatingCount",
   "places.types", "places.googleMapsUri", "places.businessStatus", "places.location",
+  "places.primaryTypeDisplayName", "places.editorialSummary",
   "nextPageToken"].join(",");
 
 async function directGoogle({ apiKey, textQuery, rect }) {
@@ -472,7 +478,8 @@ async function directGoogle({ apiKey, textQuery, rect }) {
     for (const p of data.places || []) {
       places.push({
         id: p.id, name: p.displayName?.text || "",
-        category: (p.types?.[0] || "").replace(/_/g, " "),
+        category: p.primaryTypeDisplayName?.text || (p.types?.[0] || "").replace(/_/g, " "),
+        description: p.editorialSummary?.text || "",
         address: p.formattedAddress || "", phone: p.nationalPhoneNumber || "",
         website: p.websiteUri || "", rating: p.rating, reviews: p.userRatingCount,
         status: p.businessStatus || "", lat: p.location?.latitude, lng: p.location?.longitude,
@@ -717,7 +724,8 @@ function renderTable() {
     ].filter(Boolean).join(" · ");
     const reviews = p.rating ? `${p.rating}★ (${p.reviews || 0})` : (p.source === "osm" ? "—" : "");
     return `<tr>
-      <td><div class="nm">${esc(p.name)}</div><div class="cat">${esc(p.category)}</div></td>
+      <td><div class="nm">${esc(p.name)}</div><div class="cat">${esc(p.category)}</div>${
+        p.description ? `<div class="desc">${esc(p.description)}</div>` : ""}</td>
       <td><span class="badge ${pr.cls}">${pr.label}</span></td>
       <td>${esc(p.address)}</td>
       <td>${esc(p.phone)}</td>
@@ -836,8 +844,8 @@ document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click
 
 /* ---------------- CSV export ---------------- */
 $("exportBtn").addEventListener("click", () => {
-  const cols = ["name", "category", "presence", "website", "phone", "facebook", "instagram",
-                "tiktok", "email", "address", "rating", "reviews", "mapsUrl", "source"];
+  const cols = ["name", "category", "description", "presence", "website", "phone", "facebook",
+                "instagram", "tiktok", "email", "address", "rating", "reviews", "mapsUrl", "source"];
   const rows = visiblePlaces().map(p => cols.map(c => {
     let v = c === "presence" ? PRESENCE[p.presence].label : (p[c] ?? "");
     v = String(v).replace(/"/g, '""');

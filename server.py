@@ -155,12 +155,16 @@ out center tags;""",
         lng_ = el.get("lon") or (el.get("center") or {}).get("lon")
         addr_parts = [tags.get("addr:housenumber"), tags.get("addr:street"),
                       tags.get("addr:city"), tags.get("addr:postcode")]
-        category = tags.get("shop") or tags.get("craft") or tags.get("amenity") \
-            or tags.get("leisure") or tags.get("office") or ""
+        category = (tags.get("shop") or tags.get("craft") or tags.get("amenity")
+                    or tags.get("leisure") or tags.get("office") or "").replace("_", " ")
+        cuisine = tags.get("cuisine", "").replace(";", ", ").replace("_", " ")
+        if cuisine:
+            category += f" · {cuisine}"
         places.append({
             "id": f"osm-{el.get('type')}-{el.get('id')}",
             "name": name,
-            "category": category.replace("_", " "),
+            "category": category,
+            "description": tags.get("description", ""),
             "address": " ".join(p for p in addr_parts if p),
             "phone": tags.get("phone") or tags.get("contact:phone") or "",
             "website": website,
@@ -182,6 +186,7 @@ GOOGLE_FIELD_MASK = ",".join([
     "places.websiteUri", "places.nationalPhoneNumber", "places.rating",
     "places.userRatingCount", "places.types", "places.googleMapsUri",
     "places.businessStatus", "places.location",
+    "places.primaryTypeDisplayName", "places.editorialSummary",
     "nextPageToken",
 ])
 
@@ -250,7 +255,9 @@ def api_google(params):
             places.append({
                 "id": p.get("id"),
                 "name": (p.get("displayName") or {}).get("text", ""),
-                "category": (p.get("types") or [""])[0].replace("_", " "),
+                "category": (p.get("primaryTypeDisplayName") or {}).get("text")
+                            or (p.get("types") or [""])[0].replace("_", " "),
+                "description": (p.get("editorialSummary") or {}).get("text", ""),
                 "address": p.get("formattedAddress", ""),
                 "phone": p.get("nationalPhoneNumber", ""),
                 "website": p.get("websiteUri", ""),
